@@ -2,6 +2,7 @@ import logging
 import os
 import urllib.parse
 import requests
+from requests.adapters import HTTPAdapter, Retry
 from typing import Optional, List, Dict
 
 
@@ -38,8 +39,14 @@ class Client:
             url: URL of resource
             file_path: Location on disk to save remote resource to
         """
+        rsession = requests.Session()
+        retry = Retry(connect=4, backoff_factor=2.0)
+        adapter = HTTPAdapter(max_retries=retry)
+        rsession.mount('http://', adapter)
+        rsession.mount('https://', adapter)
+
         with open(file_path, "wb") as file:
-            response = requests.get(url)
+            response = rsession.get(url)
             file.write(response.content)
 
     def request(self, verb: str, route: str, *args, **kwargs) -> Dict:
@@ -162,7 +169,7 @@ class Client:
 
             folder_name = "_".join([dataset["name"], dataset["version"]])
             folder_path = os.path.join(download_dir, boundary_name, folder_name)
-            os.makedirs(folder_path, exist_ok=overwrite)
+            os.makedirs(folder_path, exist_ok=True)
 
             for url in dataset["path"]:
                 filename = url.split("/")[-1]
@@ -172,7 +179,12 @@ class Client:
             logging.info(
                 f"Downloading {i + 1} of {len(url_to_file_path)} to {filepath}"
             )
-            self.download_file(url, filepath)
+            if os.path.exists(filepath) and os.path.getsize(filepath) > 0 and not overwrite:
+                logging.info(
+                    f"Skipping {i + 1}: file already there"
+                )
+            else:
+                self.download_file(url, filepath)
 
     def extract_list(self) -> List:
         """
